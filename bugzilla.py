@@ -14,6 +14,7 @@ import operator
 import os
 import platform
 import re
+import statistics
 import sys
 import textwrap
 import time
@@ -123,6 +124,25 @@ def output_line_graph(adir, labels, series, title, xlabel, ylabel, legend):
 	print(f"\n![{title}]({fig_to_data_uri(fig)})\n")
 
 
+def output_duration(delta):
+	m, s = divmod(delta.seconds, 60)
+	h, m = divmod(m, 60)
+	y, d = divmod(delta.days, 365)
+	text = []
+	if y:
+		text.append(f"{y:n} year{'s' if y != 1 else ''}")
+	if y or d:
+		text.append(f"{d:n} day{'s' if d != 1 else ''}")
+	if y or d or h:
+		text.append(f"{h:n} hour{'s' if h != 1 else ''}")
+	if y or d or h or m:
+		text.append(f"{m:n} minute{'s' if m != 1 else ''}")
+	if y or d or h or m or s:
+		text.append(f"{s:n} second{'s' if s != 1 else ''}")
+
+	return ", ".join(text)
+
+
 def parse_isoformat(date):
 	return datetime.fromisoformat(date[:-1] + "+00:00" if date.endswith("Z") else date)
 
@@ -189,6 +209,9 @@ def by_level(root_item, items, key):
 	return levels
 
 
+SQUARE_BRACKETS_RE = re.compile(r"\[([^\]]+)\]")
+
+
 def main():
 	if len(sys.argv) != 1:
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
@@ -247,20 +270,26 @@ def main():
 
 	created = {}
 	aopen = []
+
+	open_deltas = []
+	closed_deltas = {}
+
 	closed = {}
 	aclosed = []
 
 	for bug in items.values():
-		date = parse_isoformat(bug["creation_time"])
-		created.setdefault((date.year, date.month), []).append(bug)
+		created_date = parse_isoformat(bug["creation_time"])
+		created.setdefault((created_date.year, created_date.month), []).append(bug)
 
 		if bug["is_open"]:
 			aopen.append(bug)
+			open_deltas.append(date - created_date)
 		else:
 			aclosed.append(bug)
 			if bug["cf_last_resolved"]:
-				date = parse_isoformat(bug["cf_last_resolved"])
-				closed.setdefault((date.year, date.month), []).append(bug)
+				closed_date = parse_isoformat(bug["cf_last_resolved"])
+				closed.setdefault((closed_date.year, closed_date.month), []).append(bug)
+				closed_deltas.setdefault((closed_date.year, closed_date.month), []).append(closed_date - created_date)
 
 	open_count = len(aopen)
 	counts = Counter(bug["product"] for bug in aopen)
@@ -285,6 +314,12 @@ def main():
 
 	print(f"\n**Triaged Open Bugs** (is confirmed and has a priority): {triaged:n} / {open_count:n} ({triaged / open_count:.4%})\n")
 
+	mean = sum(open_deltas, timedelta()) / len(open_deltas)
+
+	print(
+		f"**Open Bugs Duration**\n* Average/Mean: {output_duration(mean)}\n* Median: {output_duration(statistics.median(open_deltas))}\n"
+	)
+
 	status_counts = Counter(bug["status"] for bug in aopen)
 
 	print("#### Open Bug Statuses\n")
@@ -302,6 +337,12 @@ def main():
 	)
 
 	keyword_counts = Counter(keyword for bug in aopen for keyword in bug["keywords"])
+	whiteboard_counts = Counter(
+		whiteboard.lower()
+		for bug in aopen
+		if bug["whiteboard"]
+		for whiteboard in SQUARE_BRACKETS_RE.findall(bug["whiteboard"]) or (bug["whiteboard"],)
+	)
 
 	if VERBOSE:
 		print("\n### Top Open Bug Keywords\n")
@@ -309,18 +350,33 @@ def main():
 		output_markdown_table([(f"{count:n}", key) for key, count in keyword_counts.most_common(20)], ("Count", "Keyword"))
 
 		print(f"\nDescriptions of keywords: {BUGZILLA_BASE_URL}describekeywords.cgi\n")
+
+		print("### Top Open Bug Whiteboard\n")
+
+		output_markdown_table([(f"{count:n}", key) for key, count in whiteboard_counts.most_common(10)], ("Count", "Whiteboard"))
 	else:
 		print(f"""
-* Regression Bugs: {keyword_counts.get("regression", 0):n}
-* Dataloss Bugs: {keyword_counts.get("dataloss", 0):n}
-* Crash Bugs: {keyword_counts.get("crash", 0):n}
+#### Selected Open Bug Keywords
+
+* Regression: {keyword_counts.get("regression", 0):n}
+* Dataloss: {keyword_counts.get("dataloss", 0):n}
+* Crash: {keyword_counts.get("crash", 0):n}
+* Performace: {keyword_counts.get("perf", 0):n}
+* Parity Outlook: {keyword_counts.get("parity-Outlook", 0):n}
+* Help Wanted: {keyword_counts.get("helpwanted", 0):n}
 * [Good First Bugs]({BUGZILLA_SHORT_URL}product:Thunderbird,%22MailNews%20Core%22,Calendar,%22Chat%20Core%22%20kw:good-first-bug): {keyword_counts.get("good-first-bug", 0):n}
-""")
+
+Also see: https://codetribute.mozilla.org/projects/thunderbird
+
+#### Selected Open Bug Whiteboard
+
+* patchlove: {whiteboard_counts.get("patchlove", 0):n}
+* datalossy: {whiteboard_counts.get("datalossy", 0):n}""")
 
 	closed_count = len(aclosed)
 	resolution_counts = Counter(bug["resolution"] for bug in aclosed)
 
-	print("### Closed Bugs\n")
+	print("\n### Closed Bugs\n")
 
 	print("#### Closed Bug Resolutions\n")
 	output_markdown_table(
@@ -339,6 +395,7 @@ def main():
 	labels = list(reversed(dates))
 	created_statuses = {key: [] for key in STATUSES}
 	closed_resolutions = {key: [] for key in RESOLUTIONS}
+	deltas = {key: [] for key in ("Mean", "Median")}
 	differences = []
 
 	with open(os.path.join(adir, "BMO_bugs_created.csv"), "w", newline="", encoding="utf-8") as csvfile1, open(
@@ -364,6 +421,9 @@ def main():
 			closed_counts = Counter(bug["resolution"] for bug in closed[adate])
 			closed_count = len(closed[adate])
 
+			mean = sum(closed_deltas[adate], timedelta()) / len(closed_deltas[adate])
+			median = statistics.median(closed_deltas[adate])
+
 			difference = created_count - closed_count
 
 			writer1.writerow({"Date": f"{date:%B %Y}", "Total Created": created_count, **created_counts})
@@ -388,6 +448,9 @@ def main():
 			for key in RESOLUTIONS:
 				closed_resolutions[key].append(closed_counts.get(key, 0))
 
+			deltas["Mean"].append((mean.days * 24 * 60 * 60 + mean.seconds) / (365 * 24 * 60 * 60))
+			deltas["Median"].append((median.days * 24 * 60 * 60 + median.seconds) / (365 * 24 * 60 * 60))
+
 			differences.append(difference)
 
 	print("\n### Total Created Bugs by Month\n")
@@ -405,6 +468,9 @@ def main():
 		adir, labels, {"Difference": differences}, "Bugzilla Created vs Closed Difference by Month", "Date", "Difference", None
 	)
 	output_markdown_table(rows3, ("Month", "Total Created", "Total Closed", "Difference"), True)
+
+	print("\n### Closed Bugs Total Duration by Month\n")
+	output_line_graph(adir, labels, deltas, "Bugzilla Closed Bugs Total Duration by Month", "Date", "Duration (years)", None)
 
 	print("\n### Top Open Bugs by Total Reactions\n")
 

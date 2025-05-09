@@ -14,6 +14,7 @@ import operator
 import os
 import platform
 import re
+import statistics
 import sys
 import textwrap
 import time
@@ -126,10 +127,29 @@ def output_line_graph(adir, labels, series, title, xlabel, ylabel, legend):
 	print(f"\n![{title}]({fig_to_data_uri(fig)})\n")
 
 
+def output_duration(delta):
+	m, s = divmod(delta.seconds, 60)
+	h, m = divmod(m, 60)
+	y, d = divmod(delta.days, 365)
+	text = []
+	if y:
+		text.append(f"{y:n} year{'s' if y != 1 else ''}")
+	if y or d:
+		text.append(f"{d:n} day{'s' if d != 1 else ''}")
+	if y or d or h:
+		text.append(f"{h:n} hour{'s' if h != 1 else ''}")
+	if y or d or h or m:
+		text.append(f"{m:n} minute{'s' if m != 1 else ''}")
+	if y or d or h or m or s:
+		text.append(f"{s:n} second{'s' if s != 1 else ''}")
+
+	return ", ".join(text)
+
+
 suffix_power_char = ("", "K", "M", "G", "T", "P", "E", "Z", "Y", "R", "Q")
 
 
-def outputunit(number, scale=False):
+def output_unit(number, scale=False):
 	scale_base = 1000 if scale else 1024
 
 	power = 0
@@ -405,37 +425,47 @@ def main():
 
 	print(f"Data as of: {date:%Y-%m-%d %H:%M:%S%z}\n")
 
-	issues_created = {(date.year, date.month): [] for date in dates}
-	pr_created = {(date.year, date.month): [] for date in dates}
+	issues_created = {(adate.year, adate.month): [] for adate in dates}
+	pr_created = {(adate.year, adate.month): [] for adate in dates}
 
-	issues_closed = {(date.year, date.month): [] for date in dates}
-	pr_closed = {(date.year, date.month): [] for date in dates}
+	issues_closed = {(adate.year, adate.month): [] for adate in dates}
+	pr_closed = {(adate.year, adate.month): [] for adate in dates}
 
 	issues_open = []
 	pr_open = []
+
+	issues_open_deltas = []
+	pr_open_deltas = []
+
+	issues_closed_deltas = {(adate.year, adate.month): [] for adate in dates}
+	# pr_closed_deltas = {(adate.year, adate.month): [] for adate in dates}
 
 	aissues_closed = []
 	apr_closed = []
 
 	for issue in issues:
-		date = parse_isoformat(issue["created_at"])
+		created_date = parse_isoformat(issue["created_at"])
 		if "pull_request" in issue:
-			pr_created.setdefault((date.year, date.month), []).append(issue)
+			pr_created.setdefault((created_date.year, created_date.month), []).append(issue)
 		else:
-			issues_created.setdefault((date.year, date.month), []).append(issue)
+			issues_created.setdefault((created_date.year, created_date.month), []).append(issue)
 
 		if issue["closed_at"]:
-			date = parse_isoformat(issue["closed_at"])
+			closed_date = parse_isoformat(issue["closed_at"])
 			if "pull_request" in issue:
-				pr_closed.setdefault((date.year, date.month), []).append(issue)
+				pr_closed.setdefault((closed_date.year, closed_date.month), []).append(issue)
+				# pr_closed_deltas.setdefault((closed_date.year, closed_date.month), []).append(closed_date - created_date)
 				apr_closed.append(issue)
 			else:
-				issues_closed.setdefault((date.year, date.month), []).append(issue)
+				issues_closed.setdefault((closed_date.year, closed_date.month), []).append(issue)
+				issues_closed_deltas.setdefault((closed_date.year, closed_date.month), []).append(closed_date - created_date)
 				aissues_closed.append(issue)
 		elif "pull_request" in issue:
 			pr_open.append(issue)
+			pr_open_deltas.append(date - created_date)
 		else:
 			issues_open.append(issue)
+			issues_open_deltas.append(date - created_date)
 
 	issue_counts = Counter("/".join(urlparse(issue["repository_url"]).path.split("/")[-2:]) for issue in issues_open)
 	issues_count = len(issues_open)
@@ -455,6 +485,12 @@ def main():
 
 	print(f"\n**Triaged Open Issues**: {triaged_issues:n} / {issues_count:n} ({triaged_issues / issues_count:.4%})\n")
 	print("Triaged meaning it has a type or at least one label and not the 'unconfirmed' label.\n")
+
+	mean = sum(issues_open_deltas, timedelta()) / len(issues_open_deltas)
+
+	print(
+		f"**Open Issues Duration**\n* Average/Mean: {output_duration(mean)}\n* Median: {output_duration(statistics.median(issues_open_deltas))}\n"
+	)
 
 	label_counts = Counter(label["name"] for issue in issues_open for label in issue["labels"])
 
@@ -497,6 +533,12 @@ def main():
 	print(f"\n**Triaged Open Pull Requests**: {triaged_prs:n} / {prs_count:n} ({triaged_prs / prs_count:.4%})\n")
 	print("Triaged meaning it has a type, at least one label or an assignee.\n")
 
+	mean = sum(pr_open_deltas, timedelta()) / len(pr_open_deltas)
+
+	print(
+		f"**Open Pull Requests Duration**\n* Average/Mean: {output_duration(mean)}\n* Median: {output_duration(statistics.median(pr_open_deltas))}\n"
+	)
+
 	state_counts = Counter("Merged" if issue["pull_request"]["merged_at"] else "Unmerged" for issue in apr_closed)
 	states_count = len(apr_closed)
 
@@ -513,6 +555,7 @@ def main():
 	labels = list(reversed(dates))
 	created_state = {k: [] for key in zip(issue_keys, pr_keys) for k in key}
 	closed_state = {key: [] for key in (*dict(reason_counts.most_common()), "Merged", "Unmerged")}
+	deltas = {key: [] for key in ("Mean", "Median")}
 	differences = []
 
 	with open(os.path.join(adir, "GitHub_created.csv"), "w", newline="", encoding="utf-8") as csvfile1, open(
@@ -551,6 +594,13 @@ def main():
 			closed_prs_count = len(pr_closed[adate])
 			closed_pr_counts = Counter("Merged" if issue["pull_request"]["merged_at"] else "Unmerged" for issue in pr_closed[adate])
 			closed_count = closed_issues_count + closed_prs_count
+
+			mean = (
+				sum(issues_closed_deltas[adate], timedelta()) / len(issues_closed_deltas[adate])
+				if issues_closed_deltas[adate]
+				else timedelta()
+			)
+			median = statistics.median(issues_closed_deltas[adate]) if issues_closed_deltas[adate] else timedelta()
 
 			difference = created_count - closed_count
 
@@ -600,6 +650,9 @@ def main():
 			for key in ("Merged", "Unmerged"):
 				closed_state[key].append(closed_pr_counts.get(key, 0))
 
+			deltas["Mean"].append((mean.days * 24 * 60 * 60 + mean.seconds) / (365 * 24 * 60 * 60))
+			deltas["Median"].append((median.days * 24 * 60 * 60 + median.seconds) / (365 * 24 * 60 * 60))
+
 			differences.append(difference)
 
 	print("\n### Total Created Issues and Pull Requests by Month\n")
@@ -623,6 +676,9 @@ def main():
 		adir, labels, {"Difference": differences}, "GitHub Created vs Closed Difference by Month", "Date", "Difference", None
 	)
 	output_markdown_table(rows3, ("Month", "Total Created", "Total Closed", "Difference"), True)
+
+	print("\n### Closed Issues Total Duration by Month\n")
+	output_line_graph(adir, labels, deltas, "GitHub Closed Issues Total Duration by Month", "Date", "Duration (years)", None)
 
 	pr_user_counts = Counter(
 		(item["user"]["id"], item["user"]["login"], item["user"]["html_url"])
@@ -686,7 +742,7 @@ def main():
 		[
 			(
 				f"{count / language_count:.4%}",
-				f"{outputunit(count)}B",
+				f"{output_unit(count)}B",
 				f"{f'{LANGUAGE_EMOJI[key]} ' if key in LANGUAGE_EMOJI else ''}{key}",
 			)
 			for key, count in language_counts.most_common(15)
@@ -703,17 +759,17 @@ def main():
 		language_counts = Counter(languages[key])
 		language_count = sum(language_counts.values())
 		rows.append((
-			f"{outputunit(count)}B",
+			f"{output_unit(count)}B",
 			key,
 			", ".join(
-				f"{f'{LANGUAGE_EMOJI[lang]} ' if lang in LANGUAGE_EMOJI else ''}{lang}: {acount / language_count:.1%}"
+				f"{f'{LANGUAGE_EMOJI[lang]} ' if lang in LANGUAGE_EMOJI else ''}{lang}: {acount / language_count:.2%}"
 				for lang, acount in language_counts.most_common(5)
 			),
 		))
 
 	output_markdown_table(rows, ("Bytes", "Repository", "Languages (top 5)"))
 
-	print(f"\nTotal code: {outputunit(sum(repo_counts.values()))}B")
+	print(f"\nTotal code: {output_unit(sum(repo_counts.values()))}B")
 
 	print(
 		"\nNote: The 'mozilla/releases-comm-central' repository is a GitHub mirror of comm-central, so the two tables above include all Thunderbird code"

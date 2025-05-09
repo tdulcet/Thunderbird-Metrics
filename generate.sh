@@ -21,7 +21,7 @@ mkdir -p "$date1"/{bugzilla,github,mozilla_connect,addons,support,localization}
 
 # {
 # 	echo -e '---\n'
-# 	for script in bugzilla.py github.py mozilla_connect.py crash_stats.py code_coverage.py sumo.py discourse.py addons.py pontoon.py weblate.py topicbox.py; do
+# 	for script in bugzilla.py github.py mozilla_connect.py stats.py crash_stats.py code_coverage.py addons.py sumo.py discourse.py pontoon.py weblate.py topicbox.py; do
 # 		echo "$script" >&2
 # 		python3 -X dev "$script"
 # 		echo -e '\n---\n'
@@ -36,11 +36,11 @@ Subject: Thunderbird Community Metrics $date2 ($date1): Bugzilla, Crash Stats an
 
 Hello Thunderbird Community,
 
-Welcome to the Thunderbird Community Metrics, which are designed to complement Magnus’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 11 sources:
+Welcome to the Thunderbird Community Metrics, which are designed to complement Magnus’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 12 sources:
 
 1. Bugzilla/BMO, Crash Stats and Thunderbird Code Coverage
 2. GitHub
-3. Mozilla Connect
+3. Thunderbird Stats and Mozilla Connect
 4. Thunderbird Add-ons/ATN
 5. Support (Mozilla Support/SUMO, Mozilla Discourse and Topicbox)
 6. Localization (Pontoon and Weblate)
@@ -92,10 +92,10 @@ Feedback is welcome. The scripts used to generate these e-mails are open source:
 -Teal
 EOF
 
-echo -e "\nMozilla Connect\n"
+echo -e "\nThunderbird Stats and Mozilla Connect\n"
 
 cat <<EOF >"$date1/mozilla_connect/email.md"
-Subject: Thunderbird Community Metrics $date2 ($date1): Mozilla Connect
+Subject: Thunderbird Community Metrics $date2 ($date1): Stats and Mozilla Connect
 
 Hello Thunderbird Community,
 
@@ -106,6 +106,8 @@ This is e-mail 3 of 6 of the Thunderbird Community Metrics. It includes graphs, 
 ---
 
 # 📊 Thunderbird Community Metrics $date2 ($date1)
+
+$(time python3 -OO stats.py)
 
 $(time python3 -OO mozilla_connect.py)
 
