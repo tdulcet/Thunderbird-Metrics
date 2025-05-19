@@ -33,7 +33,9 @@ session = requests.Session()
 session.headers["User-Agent"] = (
 	f"Thunderbird Metrics ({session.headers['User-Agent']} {platform.python_implementation()}/{platform.python_version()})"
 )
-session.mount("https://", requests.adapters.HTTPAdapter(max_retries=urllib3.util.Retry(3, backoff_factor=1)))
+session.mount(
+	"https://", requests.adapters.HTTPAdapter(max_retries=urllib3.util.Retry(3, status_forcelist=(502,), backoff_factor=1))
+)
 atexit.register(session.close)
 
 ADDONS_SERVER_BASE_URL = "https://addons.thunderbird.net/"
@@ -68,6 +70,25 @@ def output_markdown_table(rows, header, hide=False):
 		print("\n</details>")
 
 
+def output_emojis(addon):
+	text = []
+
+	if addon["is_disabled"]:
+		text.append("⛔")
+	if addon["is_experimental"]:
+		text.append("⚠️")
+	if addon["is_source_public"]:
+		text.append("📜")
+	if addon["contributions_url"]:
+		text.append("❤️")
+	if addon["requires_payment"]:
+		text.append("💲")
+	if addon["public_stats"]:
+		text.append("📈")
+
+	return "".join(text)
+
+
 def fig_to_data_uri(fig):
 	with io.BytesIO() as buf:
 		fig.savefig(buf, format="svg", bbox_inches="tight")
@@ -81,6 +102,8 @@ def output_stacked_bar_graph(adir, labels, stacks, title, xlabel, ylabel, legend
 	fig, ax = plt.subplots(figsize=(12, 8))
 
 	ax.margins(0.01)
+	if any(sum(v) > 200 for v in zip(*stacks.values())):
+		ax.set_ylim(top=200)
 
 	widths = [timedelta(26)] + [(labels[i] - labels[i + 1]) * 0.9 for i in range(len(labels) - 1)]
 	cum = [0] * len(labels)
@@ -138,8 +161,8 @@ def parse_version(version):
 	)
 
 
-def is_compatible(version, addon):
-	compat = addon["current_version"]["compatibility"][APP]
+def is_compatible(version, addon_version):
+	compat = addon_version["compatibility"][APP]
 
 	return parse_version(compat["min"]) <= version and parse_version(compat["max"]) >= version
 
@@ -179,7 +202,7 @@ def get_addons(atype):
 	page = 1
 
 	while True:
-		print(f"\tPage {page} ({len(addons)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(addons):n})", file=sys.stderr)
 
 		try:
 			r = session.get(
@@ -206,13 +229,53 @@ def get_addons(atype):
 	return addons
 
 
+def get_addon_versions(addon_id):
+	versions = []
+	page = 1
+
+	while True:
+		print(f"\tPage {page} ({len(versions):n})", file=sys.stderr)
+
+		try:
+			r = session.get(
+				f"{ADDONS_SERVER_API_URL}addons/addon/{addon_id}/versions/",
+				params={"lang": LANG, "page_size": LIMIT, "page": page},
+				timeout=30,
+			)
+			r.raise_for_status()
+			data = r.json()
+		except HTTPError as e:
+			print(e, r.text, file=sys.stderr)
+			if r.status_code in {401, 404}:
+				return versions
+			sys.exit(1)
+		except RequestException as e:
+			print(e, file=sys.stderr)
+			sys.exit(1)
+
+		versions.extend(data["results"])
+
+		if not data["next"]:
+			break
+
+		page += 1
+
+	return versions
+
+
 def main():
 	if len(sys.argv) != 1:
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2015, 1, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = datetime(year - 10, 1, 1, tzinfo=timezone.utc)
+
 	dates = []
 	date = start_date
 	while date < end_date:
@@ -234,12 +297,12 @@ def main():
 
 	print("## 🧩 Thunderbird Add-ons/ATN (addons.thunderbird.net)\n")
 
-	versions = get_tb_versions()
+	tb_versions = get_tb_versions()
 
 	aversions = [
 		(parse_version(version), version, name)
 		for version, name in [
-			(versions[key], name)
+			(tb_versions[key], name)
 			for key, name in (
 				("LATEST_THUNDERBIRD_NIGHTLY_VERSION", "Daily"),
 				("LATEST_THUNDERBIRD_DEVEL_VERSION", "Beta"),
@@ -247,7 +310,7 @@ def main():
 				("THUNDERBIRD_ESR_NEXT", "Next ESR"),
 				("THUNDERBIRD_ESR", "ESR"),
 			)
-			if versions[key]
+			if tb_versions[key]
 		]
 		+ [("115.18.0", "Old ESR")]
 	]
@@ -282,16 +345,40 @@ def main():
 			with open(file, encoding="utf-8") as f:
 				addons = json.load(f)
 
-		items = [addon for addon in addons if any(is_compatible(aversion, addon) for aversion, _, _ in aversions)]
+		file = os.path.join(f"{end_date:%Y-%m}", f"ATN_{atype}_versions.json")
+
+		if not os.path.exists(file):
+			addon_versions = {}
+
+			starttime = time.perf_counter()
+
+			for addon in addons:
+				print(f"\n{atype}: {addon['id']} {addon['slug']!r}")
+				addon_versions[f"{addon['id']}-{addon['slug']}"] = get_addon_versions(addon["id"])
+
+			endtime = time.perf_counter()
+			print(f"Downloaded add-on versions in {endtime - starttime:n} seconds.", file=sys.stderr)
+
+			with open(file, "w", encoding="utf-8") as f:
+				json.dump(addon_versions, f, ensure_ascii=False, indent="\t")
+		else:
+			with open(file, encoding="utf-8") as f:
+				addon_versions = json.load(f)
+
+		items = [
+			addon for addon in addons if any(is_compatible(aversion, addon["current_version"]) for aversion, _, _ in aversions)
+		]
 
 		date = datetime.fromtimestamp(os.path.getmtime(file), timezone.utc)
 
 		print(f"Data as of: {date:%Y-%m-%d %H:%M:%S%z}\n")
 
 		addons_count = len(addons)
-		duplicates_count = addons_count - len({addon["slug"] for addon in addons})
+		duplicates_count = {key: addons_count - len({addon[key] for addon in addons}) for key in ("id", "slug", "guid")}
 
-		print(f"#### Total {name}s: {addons_count:n}\t{f'(duplicates: {duplicates_count:n})' if duplicates_count else ''}\n")
+		print(
+			f"#### Total {name}s: {addons_count:n}\t{'(' + ', '.join(f'duplicate {key}s: {value:n}' for key, value in duplicates_count.items() if value) + ')' if any(duplicates_count.values()) else ''}\n"
+		)
 
 		# disabled_count = sum(1 for addon in addons if addon["is_disabled"])
 		experimental_count = sum(1 for addon in addons if addon["is_experimental"])
@@ -314,17 +401,28 @@ def main():
 			("Type", "Count"),
 		)
 
-		print(
-			f"\n##### {name}s compatible with recent Thunderbird versions\n\n(Looking only at the Thunderbird releases compatible with the latest version of each {name}.)\n"
-		)
+		print(f"\n##### {name}s compatible with recent Thunderbird versions\n")
 
 		rows = []
 		for aversion, version, aname in aversions:
-			count = sum(1 for addon in addons if is_compatible(aversion, addon))
+			latest_count = sum(1 for addon in addons if is_compatible(aversion, addon["current_version"]))
+			any_count = sum(
+				1
+				for addon in addons
+				if any(
+					is_compatible(aversion, addon_version)
+					for addon_version in addon_versions[f"{addon['id']}-{addon['slug']}"] or (addon["current_version"],)
+					if APP in addon_version["compatibility"]
+				)
+			)
 
-			rows.append((f"Thunderbird {aname} ({version})", f"{count:n} / {addons_count:n} ({count / addons_count:.4%})"))
+			rows.append((
+				f"Thunderbird {aname} ({version})",
+				f"{latest_count:n} / {addons_count:n} ({latest_count / addons_count:.4%})",
+				f"{any_count:n} / {addons_count:n} ({any_count / addons_count:.4%})",
+			))
 
-		output_markdown_table(rows, ("Version", "Count"))
+		output_markdown_table(rows, ("Thunderbird Version", "Latest Add-on Version Count", "Any Add-on Version Count"))
 
 		print(f"\nTotal compatible: {len(items):n} / {addons_count:n} ({len(items) / addons_count:.4%})")
 
@@ -357,6 +455,7 @@ def main():
 
 		created = {}
 		updated = {}
+		updates = {}
 
 		for addon in addons:
 			date = parse_isoformat(addon["created"])
@@ -365,16 +464,25 @@ def main():
 			date = parse_isoformat(addon["last_updated"])
 			updated.setdefault((date.year, date.month), []).append(addon)
 
+			for version in addon_versions[f"{addon['id']}-{addon['slug']}"] or (addon["current_version"],):
+				date = parse_isoformat(max(file["created"] for file in version["files"]))
+				updates.setdefault((date.year, date.month), []).append(addon)
+
 		labels = list(reversed(dates))
 		created_status = {key: [] for key in ("Created",)}
-		# created_category = {key: [] for key in category_counts}
+		updates_status = {key: [] for key in ("Updates",)}
 
-		with open(os.path.join(adir, f"ATN_{atype}s.csv"), "w", newline="", encoding="utf-8") as csvfile:
-			writer = csv.DictWriter(csvfile, ("Date", "Total Created", *category_counts))
+		with open(os.path.join(adir, f"ATN_{atype}s_created.csv"), "w", newline="", encoding="utf-8") as csvfile1, open(
+			os.path.join(adir, f"ATN_{atype}_updates.csv"), "w", newline="", encoding="utf-8"
+		) as csvfile2:
+			writer1 = csv.DictWriter(csvfile1, ("Date", "Total Created", *category_counts))
+			writer2 = csv.writer(csvfile2)
 
-			writer.writeheader()
+			writer1.writeheader()
+			writer2.writerow(("Date", "Total Updates"))
 
-			rows = []
+			rows1 = []
+			rows2 = []
 			for date in reversed(dates):
 				adate = (date.year, date.month)
 
@@ -384,25 +492,30 @@ def main():
 				)
 				created_count = len(acreated)
 
-				writer.writerow({"Date": f"{date:%B %Y}", "Total Created": created_count, **acategory_counts})
+				updates_count = len(updates.get(adate, []))
 
-				rows.append((
+				writer1.writerow({"Date": f"{date:%B %Y}", "Total Created": created_count, **acategory_counts})
+				writer2.writerow((f"{date:%B %Y}", updates_count))
+
+				rows1.append((
 					f"{date:%B %Y}",
 					f"{created_count:n}",
 					", ".join(f"{key}: {count:n}" for key, count in acategory_counts.most_common()),
 				))
+				rows2.append((f"{date:%B %Y}", f"{updates_count:n}"))
 
 				created_status["Created"].append(created_count)
-
-				# for key in category_counts:
-				# 	created_category[key].append(acategory_counts[key])
+				updates_status["Updates"].append(updates_count)
 
 		print(f"\n#### Total {name}s Created by Month\n")
 		output_stacked_bar_graph(adir, labels, created_status, f"ATN {name}s Created by Month", "Date", "Total Created", None)
-		# output_stacked_bar_graph(adir, labels, created_category, f"ATN {name}s Created by Category and Month", "Date", "Total Created", "Category")
-		output_markdown_table(rows, ("Month", "Created", "Categories"), True)
+		output_markdown_table(rows1, ("Month", "Created", "Categories"), True)
 
-		version = parse_version(versions["LATEST_THUNDERBIRD_VERSION"])
+		print(f"\n#### Total {name} Updates by Month\n")
+		output_stacked_bar_graph(adir, labels, updates_status, f"ATN {name} Updates by Month", "Date", "Total Updates", None)
+		output_markdown_table(rows2, ("Month", "Updates"), True)
+
+		version = parse_version(tb_versions["LATEST_THUNDERBIRD_VERSION"])
 
 		print(f"\n#### {name}s Created ({end_date:%B %Y})\n")
 
@@ -411,6 +524,7 @@ def main():
 			rows.append((
 				f"{i:n}",
 				f"{parse_isoformat(item['created']):%Y-%m-%d}",
+				output_emojis(item),
 				item["name"],
 				textwrap.shorten(item["summary"], 50, placeholder="…") if item["summary"] else "-",
 				", ".join(
@@ -421,7 +535,7 @@ def main():
 				remove_locale_url(item["url"]),
 			))
 
-		output_markdown_table(rows, ("#", "Created", "Name", "Summary", "Authors", "Version", "URL"))
+		output_markdown_table(rows, ("#", "Created", "", "Name", "Summary", "Authors", "Version", "URL"))
 
 		if atype == "extension":
 			print("\nAlso see: https://thunderbird.github.io/webext-reports/recent-addition.html")
@@ -435,6 +549,7 @@ def main():
 			rows.append((
 				f"{i:n}",
 				f"{parse_isoformat(item['last_updated']):%Y-%m-%d}",
+				output_emojis(item),
 				item["name"],
 				textwrap.shorten(item["summary"], 50, placeholder="…") if item["summary"] else "-",
 				", ".join(
@@ -445,7 +560,7 @@ def main():
 				remove_locale_url(item["url"]),
 			))
 
-		output_markdown_table(rows, ("#", "Updated", "Name", "Summary", "Authors", "Version", "URL"))
+		output_markdown_table(rows, ("#", "Updated", "", "Name", "Summary", "Authors", "Version", "URL"))
 
 		if atype == "extension":
 			print("\nAlso see: https://thunderbird.github.io/webext-reports/recent-activity.html")
@@ -458,18 +573,19 @@ def main():
 			rows.append((
 				f"{i:n}",
 				f"{item['average_daily_users']:n}",
+				output_emojis(item),
 				item["name"],
 				", ".join(
 					f"{author['name']!r} ({author['username']})" if author["name"] != author["username"] else author["username"]
 					for author in item["authors"]
 				),
-				f"{'✔️' if is_compatible(version, item) else '❌'} {compat['min']} - {compat['max']}",
+				f"{'✔️' if is_compatible(version, item['current_version']) else '❌'} {compat['min']} - {compat['max']}",
 				remove_locale_url(item["url"]),
 			))
 			if i >= 20:
 				break
 
-		output_markdown_table(rows, ("#", "Daily Users", "Name", "Authors", "Compatibility", "URL"))
+		output_markdown_table(rows, ("#", "Daily Users", "", "Name", "Authors", "Compatibility", "URL"))
 
 		if atype == "extension":
 			print("\nSee full list: https://thunderbird.github.io/webext-reports/all.html")
@@ -484,18 +600,19 @@ def main():
 				rows.append((
 					f"{i:n}",
 					f"{item['weekly_downloads']:n}",
+					output_emojis(item),
 					item["name"],
 					", ".join(
 						f"{author['name']!r} ({author['username']})" if author["name"] != author["username"] else author["username"]
 						for author in item["authors"]
 					),
-					f"{'✔️' if is_compatible(version, item) else '❌'} {compat['min']} - {compat['max']}",
+					f"{'✔️' if is_compatible(version, item['current_version']) else '❌'} {compat['min']} - {compat['max']}",
 					remove_locale_url(item["url"]),
 				))
 				if i >= 20:
 					break
 
-			output_markdown_table(rows, ("#", "Weekly Downloads", "Name", "Authors", "Compatibility", "URL"))
+			output_markdown_table(rows, ("#", "Weekly Downloads", "", "Name", "Authors", "Compatibility", "URL"))
 
 		print(f"\n#### Top {name}s by Total Reviews\n")
 
@@ -506,18 +623,19 @@ def main():
 				f"{i:n}",
 				f"{item['ratings']['count']:n}",
 				f"{item['ratings']['bayesian_average']:n}",
+				output_emojis(item),
 				item["name"],
 				", ".join(
 					f"{author['name']!r} ({author['username']})" if author["name"] != author["username"] else author["username"]
 					for author in item["authors"]
 				),
-				f"{'✔️' if is_compatible(version, item) else '❌'} {compat['min']} - {compat['max']}",
+				f"{'✔️' if is_compatible(version, item['current_version']) else '❌'} {compat['min']} - {compat['max']}",
 				remove_locale_url(item["url"]),
 			))
 			if i >= 10:
 				break
 
-		output_markdown_table(rows, ("#", "Reviews", "Rating", "Name", "Authors", "Compatibility", "URL"))
+		output_markdown_table(rows, ("#", "Reviews", "Rating", "", "Name", "Authors", "Compatibility", "URL"))
 
 		print(f"\n#### Top {name}s by Rating (Bayesian average, greater than 10 reviews)\n")
 
@@ -535,18 +653,19 @@ def main():
 				f"{i:n}",
 				f"{item['ratings']['bayesian_average']:n}",
 				f"{item['ratings']['count']:n}",
+				output_emojis(item),
 				item["name"],
 				", ".join(
 					f"{author['name']!r} ({author['username']})" if author["name"] != author["username"] else author["username"]
 					for author in item["authors"]
 				),
-				f"{'✔️' if is_compatible(version, item) else '❌'} {compat['min']} - {compat['max']}",
+				f"{'✔️' if is_compatible(version, item['current_version']) else '❌'} {compat['min']} - {compat['max']}",
 				remove_locale_url(item["url"]),
 			))
 			if i >= 10:
 				break
 
-		output_markdown_table(rows, ("#", "Rating", "Reviews", "Name", "Authors", "Compatibility", "URL"))
+		output_markdown_table(rows, ("#", "Rating", "Reviews", "", "Name", "Authors", "Compatibility", "URL"))
 
 		print(f"\n#### Featured {name}s\n")
 
@@ -555,6 +674,7 @@ def main():
 			compat = item["current_version"]["compatibility"][APP]
 			rows.append((
 				f"{i:n}",
+				output_emojis(item),
 				item["name"],
 				textwrap.shorten(item["summary"], 50, placeholder="…") if item["summary"] else "-",
 				", ".join(
@@ -562,11 +682,11 @@ def main():
 					for author in item["authors"]
 				),
 				item["current_version"]["version"],
-				f"{'✔️' if is_compatible(version, item) else '❌'} {compat['min']} - {compat['max']}",
+				f"{'✔️' if is_compatible(version, item['current_version']) else '❌'} {compat['min']} - {compat['max']}",
 				remove_locale_url(item["url"]),
 			))
 
-		output_markdown_table(rows, ("#", "Name", "Summary", "Authors", "Version", "Compatibility", "URL"))
+		output_markdown_table(rows, ("#", "", "Name", "Summary", "Authors", "Version", "Compatibility", "URL"))
 
 		print(f"\nAlso see: {ADDONS_SERVER_BASE_URL}{APP}/{'static-theme' if atype == 'statictheme' else atype}s/\n")
 

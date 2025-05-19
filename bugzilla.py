@@ -33,14 +33,29 @@ session = requests.Session()
 session.headers["User-Agent"] = (
 	f"Thunderbird Metrics ({session.headers['User-Agent']} {platform.python_implementation()}/{platform.python_version()})"
 )
-session.mount("https://", requests.adapters.HTTPAdapter(max_retries=urllib3.util.Retry(3, backoff_factor=1)))
+session.mount("https://", requests.adapters.HTTPAdapter(max_retries=urllib3.util.Retry(5, backoff_factor=1)))
 atexit.register(session.close)
 
 BUGZILLA_BASE_URL = "https://bugzilla.mozilla.org/"
 BUGZILLA_API_URL = f"{BUGZILLA_BASE_URL}rest/"
 BUGZILLA_SHORT_URL = "https://bugzil.la/"
 
+# Optional Bugzilla API key
+BUGZILLA_KEY = None
+
+HEADERS = {"X-BUGZILLA-API-KEY": BUGZILLA_KEY} if BUGZILLA_KEY is not None else None
+
+PHABRICATOR_API_URL = "https://phabricator.services.mozilla.com/api/"
+
+# Add Phabricator API token
+PHABRICATOR_TOKEN = None
+
+HG_API_URL = "https://hg.mozilla.org/"
+
 PRODUCTS = ((("Thunderbird", "MailNews Core", "Calendar", "Chat Core"), None), (("Webtools",), "ISPDB Database Entries"))
+
+REPOSITORY_PHID = "PHID-REPO-wsfeum6yaue6jsbo7mgm"
+REPOSITORY = "comm-central"
 
 STATUSES = ("UNCONFIRMED", "NEW", "ASSIGNED", "REOPENED", "RESOLVED", "VERIFIED", "CLOSED")
 
@@ -158,15 +173,17 @@ def get_all_bugs(product, component, start_date=None):
 		try:
 			r = session.get(
 				f"{BUGZILLA_API_URL}bug",
+				headers=HEADERS,
 				params={
 					"product": product,
 					"component": component,
-					"include_fields": "product,component,votes,status,severity,cf_last_resolved,resolution,priority,is_confirmed,duplicates,comment_count,type,summary,creation_time,is_open,keywords,cc,whiteboard,id,blocks,depends_on,comments.reactions",
+					# attachments.creation_time,attachments.last_change_time,attachments.id,attachments.file_name,attachments.content_type,attachments.is_obsolete,attachments.is_patch,attachments.creator
+					"include_fields": "assigned_to,blocks,cc,cf_last_resolved,comment_count,component,creation_time,depends_on,duplicates,id,is_confirmed,is_open,keywords,priority,product,resolution,see_also,severity,status,summary,type,votes,whiteboard,comments.id,comments.text,comments.creator,comments.creation_time,comments.reactions",
 					# "last_change_time": f"{start_date:%Y-%m-%d}" if start_date is not None else start_date,
 					"limit": LIMIT,
 					"offset": offset,
 				},
-				timeout=30,
+				timeout=60,
 			)
 			r.raise_for_status()
 			data = r.json()
@@ -191,6 +208,86 @@ def get_all_bugs(product, component, start_date=None):
 	return bugs
 
 
+def phabricator_api_bmo(method, data):
+	try:
+		r = session.post(f"{PHABRICATOR_API_URL}{method}", data={"api.token": PHABRICATOR_TOKEN, **data}, timeout=30)
+		r.raise_for_status()
+		result = r.json()
+	except HTTPError as e:
+		print(e, r.text, file=sys.stderr)
+		sys.exit(1)
+	except RequestException as e:
+		print(e, file=sys.stderr)
+		sys.exit(1)
+
+	return result["result"]
+
+
+def phabricator_api(method, data):
+	results = []
+	offset = 0
+	after = None
+
+	while True:
+		print(f"\tOffset {offset}", file=sys.stderr)
+
+		try:
+			r = session.post(
+				f"{PHABRICATOR_API_URL}{method}", data={"api.token": PHABRICATOR_TOKEN, **data, "after": after}, timeout=30
+			)
+			r.raise_for_status()
+			result = r.json()
+		except HTTPError as e:
+			print(e, r.text, file=sys.stderr)
+			sys.exit(1)
+		except RequestException as e:
+			print(e, file=sys.stderr)
+			sys.exit(1)
+
+		results.extend(result["result"]["data"])
+
+		after = result["result"]["cursor"]["after"]
+		if not after:
+			break
+
+		offset += 100
+
+	return results
+
+
+def hg_get_revisions(repo):
+	limit = 10000
+	revisions = []
+	node = None
+
+	while True:
+		print(f"\tnode {node} ({len(revisions):n})", file=sys.stderr)
+
+		try:
+			r = session.get(
+				f"{HG_API_URL}{repo}/json-shortlog{f'/{node}' if node else ''}", params={"revcount": limit}, timeout=120
+			)
+			r.raise_for_status()
+			data = r.json()
+		except HTTPError as e:
+			print(e, r.text, file=sys.stderr)
+			sys.exit(1)
+		except RequestException as e:
+			print(e, file=sys.stderr)
+			sys.exit(1)
+
+		revisions.extend(data["changesets"][1:] if node else data["changesets"])
+
+		if len(data["changesets"]) < limit:
+			break
+
+		node = data["changesets"][-1]["node"]
+
+	print(len(revisions), data["changeset_count"], file=sys.stderr)
+
+	return revisions
+
+
 def by_level(root_item, items, key):
 	seen = set()
 	level = [aid for aid in root_item["duplicates"] if aid in items]
@@ -211,14 +308,28 @@ def by_level(root_item, items, key):
 
 WHITEBOARD_RE = re.compile(r"\[([^\]]+)\]")
 
+PHABRICATOR_RE = re.compile(r"https://hg\.mozilla\.org/([^/]+(?:/[^/]+)?)/rev/([0-9a-f]{12,})\b")
+
+HG_RE = re.compile(r"Differential Revision: https://phabricator\.services\.mozilla\.com/D([0-9]+)\b", re.I)
+
 
 def main():
 	if len(sys.argv) != 1:
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2015, 1, 1, tzinfo=timezone.utc)
+	if PHABRICATOR_TOKEN is None:
+		print("Error: Phabricator API token required", file=sys.stderr)
+		sys.exit(1)
+
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = datetime(year - 10, 1, 1, tzinfo=timezone.utc)
+
 	dates = []
 	date = start_date
 	while date < end_date:
@@ -264,7 +375,92 @@ def main():
 
 	items = {bug["id"]: bug for bug in bugs}
 
-	print("## 🐞 Bugzilla/BMO (bugzilla.mozilla.org)\n")
+	# bmo_users = {user["name"]: user for bug in items.values() for user in bug["cc_detail"] + [bug["assigned_to_detail"]]}
+	bmo_user_ids = {f"{user['id']}": user for bug in items.values() for user in bug["cc_detail"] + [bug["assigned_to_detail"]]}
+
+	file = os.path.join(f"{end_date:%Y-%m}", f"Phabricator_revisions_{REPOSITORY}.json")
+
+	if not os.path.exists(file):
+		print(f"Downloading Phabricator revisions: {REPOSITORY}\n", file=sys.stderr)
+
+		starttime = time.perf_counter()
+
+		revisions = phabricator_api(
+			"differential.revision.search",
+			{
+				"constraints[repositoryPHIDs][0]": REPOSITORY_PHID,
+				"attachments[reviewers]": 1,
+				"attachments[subscribers]": 1,
+				"order": "oldest",
+			},
+		)
+
+		endtime = time.perf_counter()
+		print(f"Downloaded revisions in {output_duration(timedelta(seconds=endtime - starttime))}.", file=sys.stderr)
+
+		with open(file, "w", encoding="utf-8") as f:
+			json.dump(revisions, f, ensure_ascii=False, indent="\t")
+	else:
+		with open(file, encoding="utf-8") as f:
+			revisions = json.load(f)
+
+	revision_ids = {revision["id"]: revision for revision in revisions}
+
+	file = os.path.join(f"{end_date:%Y-%m}", f"HG_commits_{REPOSITORY}.json")
+
+	if not os.path.exists(file):
+		print(f"Downloading Mozilla HG commits: {REPOSITORY}\n", file=sys.stderr)
+
+		starttime = time.perf_counter()
+
+		commits = hg_get_revisions(REPOSITORY)
+
+		endtime = time.perf_counter()
+		print(f"Downloaded commits in {output_duration(timedelta(seconds=endtime - starttime))}.", file=sys.stderr)
+
+		with open(file, "w", encoding="utf-8") as f:
+			json.dump(commits, f, ensure_ascii=False, indent="\t")
+	else:
+		with open(file, encoding="utf-8") as f:
+			commits = json.load(f)
+
+	hg_commits = {commit["node"][:12]: commit for commit in commits}
+
+	revision_dates = {}
+	for bug in items.values():
+		for comment in bug["comments"]:
+			if comment["creator"] == "pulsebot@bmo.tld":
+				for repo, checksum in PHABRICATOR_RE.findall(comment["text"]):
+					assert len(checksum) == 12
+
+					if repo == REPOSITORY:
+						commit = hg_commits[checksum]
+						hg_res = HG_RE.search(commit["desc"])
+						if hg_res:
+							revision = int(hg_res.group(1))
+							revision_dates[revision] = commit["date"][0]
+
+	missing1 = {int(revision) for commit in commits for revision in HG_RE.findall(commit["desc"])} - {
+		revision["id"] for revision in revisions
+	}
+	print(f"Warning: Missing Phabricator revisions: {len(missing1):n} ({', '.join(map(str, sorted(missing1)))})", file=sys.stderr)
+	missing2 = {int(revision) for commit in commits for revision in HG_RE.findall(commit["desc"])} - set(revision_dates)
+	print(f"Warning: Missing revisions from BMO bug comments: {len(missing2):n}", file=sys.stderr)
+	missing = missing2 - missing1
+	print(
+		f"Missing revisions from BMO bug comments - Missing Phabricator revisions: {len(missing):n} ({', '.join(map(str, sorted(missing)))})",
+		file=sys.stderr,
+	)
+
+	file = os.path.join(f"{end_date:%Y-%m}", "Phabricator_users.json")
+
+	if os.path.exists(file):
+		with open(file, encoding="utf-8") as f:
+			phab_users = json.load(f)
+	else:
+		phab_users = {}
+
+	print("## 🐞 Bugzilla/BMO (bugzilla.mozilla.org) and Phabricator\n")
 
 	print(f"Data as of: {date:%Y-%m-%d %H:%M:%S%z}\n")
 
@@ -290,6 +486,17 @@ def main():
 				closed_date = parse_isoformat(bug["cf_last_resolved"])
 				closed.setdefault((closed_date.year, closed_date.month), []).append(bug)
 				closed_deltas.setdefault((closed_date.year, closed_date.month), []).append(closed_date - created_date)
+
+	revisions_closed = {}
+	arevisions_closed = []
+
+	for aid, date in revision_dates.items():
+		revision = revision_ids[aid]
+
+		if revision["fields"]["status"]["value"] == "published":
+			closed_date = datetime.fromtimestamp(date, timezone.utc)
+			arevisions_closed.append(revision)
+			revisions_closed.setdefault((closed_date.year, closed_date.month), []).append(revision)
 
 	open_count = len(aopen)
 	counts = Counter(bug["product"] for bug in aopen)
@@ -471,6 +678,56 @@ Also see: https://codetribute.mozilla.org/projects/thunderbird
 
 	print("\n### Closed Bugs Total Duration by Month\n")
 	output_line_graph(adir, labels, deltas, "Bugzilla Closed Bugs Total Duration by Month", "Date", "Duration (years)", None)
+
+	patch_user_counts = Counter(revision["fields"]["authorPHID"] for revision in arevisions_closed)
+	apatch_user_counts = Counter(revision["fields"]["authorPHID"] for revision in revisions_closed[end_date.year, end_date.month])
+	bug_counts = {}
+	for revision in revisions_closed[end_date.year, end_date.month]:
+		bug_counts.setdefault(revision["fields"]["bugzilla.bug-id"], []).append(revision)
+	user_counts = Counter(
+		author
+		for revisions in bug_counts.values()
+		for author in {
+			revision["fields"]["authorPHID"] for revision in revisions if revision["fields"]["status"]["value"] == "published"
+		}
+	)
+	print(f"\n### Revisions by User ({end_date:%B %Y})\n")
+
+	rows = []
+	changed = False
+	for user, count in apatch_user_counts.most_common():
+		if user not in phab_users:
+			data = phabricator_api_bmo("bugzilla.account.search", {"phids[0]": user})
+			if data:
+				phab_users[user] = data[0]
+				changed = True
+
+		bmo_user = bmo_user_ids[phab_users[user]["id"]]
+		if bmo_user["name"] not in phab_users:
+			adata = phabricator_api("user.search", {"constraints[phids][0]": user})
+			if adata:
+				phab_users[bmo_user["name"]] = adata[0]
+				changed = True
+
+		phab_user = phab_users[bmo_user["name"]]
+		rows.append((
+			f"{count:n}",
+			f"{user_counts[user]:n}",
+			"🌟" if not patch_user_counts[user] - count else "",
+			phab_user["fields"]["username"],
+			phab_user["fields"]["realName"],
+			bmo_user["nick"],
+			bmo_user["real_name"],
+		))
+
+	output_markdown_table(rows, ("Revisions", "Bugs", "", "Phabricator User", "Name", "BMO User", "Name"))
+	print(
+		"\n🌟 = First time contributor\n\n(The numbers are smaller than Magnus’s e-mail as this is only looking at public Phabricator revisions.)"
+	)
+
+	if changed:
+		with open(file, "w", encoding="utf-8") as f:
+			json.dump(phab_users, f, ensure_ascii=False, indent="\t")
 
 	print("\n### Top Open Bugs by Total Reactions\n")
 

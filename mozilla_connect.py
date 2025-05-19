@@ -156,8 +156,14 @@ def main():
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2022, 1, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = max(datetime(year - 10, 1, 1, tzinfo=timezone.utc), datetime(2022, 1, 1, tzinfo=timezone.utc))
+
 	dates = []
 	date = start_date
 	while date < end_date:

@@ -116,8 +116,8 @@ def main():
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	# start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	# start_date = datetime(end_date.year - 5, 1, 1, tzinfo=timezone.utc)
 	start_date = datetime(end_date.year - 1, end_date.month, 1, tzinfo=timezone.utc)
 	dates = []
 	date = start_date

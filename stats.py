@@ -387,6 +387,8 @@ Also see: https://wiki.mozilla.org/Release_Management/Chemspill""")
 	* Firefox: https://www.arewefluentyet.com
 * Are we Glean yet?
 	* Firefox: https://arewegleanyet.com
+* Are we Design Tokens yet?
+	* Firefox: https://firefoxux.github.io/arewedesigntokensyet/
 * What Train is it now? (Release Calendar)
 	* Thunderbird: https://jfx2006.github.io/thunderbird-ci-docs/
 	* Firefox: https://whattrainisitnow.com

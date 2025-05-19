@@ -3,9 +3,9 @@ Mozilla Thunderbird Community Metrics
 
 Copyright © 2025 Teal Dulcet
 
-The Thunderbird Community Metrics are designed to complement @mkmelin’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 12 sources:
+The Thunderbird Community Metrics are designed to complement @mkmelin’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 13 sources:
 
-1. Bugzilla/BMO, Crash Stats and Thunderbird Code Coverage
+1. Bugzilla/BMO, Phabricator, Crash Stats and Thunderbird Code Coverage
 2. GitHub
 3. Thunderbird Stats and Mozilla Connect
 4. Thunderbird Add-ons/ATN
@@ -25,6 +25,8 @@ pip3 install requests matplotlib
 python3 -m pip install requests matplotlib
 ```
 The SUMO script requires Python 3.9 or greater due to the dependency on the [zoneinfo module](https://docs.python.org/3/library/zoneinfo.html).
+
+The Bugzilla/Phabricator script requires [an access token](https://phabricator.services.mozilla.com/settings/panel/apitokens/) for Phabricator.
 
 It is recommended to provide an [an access token](https://docs.github.com/en/rest/authentication/authenticating-to-the-rest-api) for the GitHub script, as otherwise would be very slow due to the strict rate limit of 60 requests/hour.
 

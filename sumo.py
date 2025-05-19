@@ -117,7 +117,7 @@ def get_questions(product, start_date):
 	page = 1
 
 	while True:
-		print(f"\tPage {page} ({len(questions)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(questions):n})", file=sys.stderr)
 
 		try:
 			r = session.get(
@@ -151,8 +151,14 @@ def main():
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = datetime(year - 5, 1, 1, tzinfo=timezone.utc)
+
 	dates = []
 	date = start_date
 	while date < end_date:
@@ -207,7 +213,7 @@ def main():
 
 	date = datetime.fromtimestamp(os.path.getmtime(file), timezone.utc)
 
-	print("## 🆘 Mozilla Support/SUMO (support.mozilla.org)\n")
+	print("## 🆘 Mozilla Support Forum/SUMO (support.mozilla.org)\n")
 
 	print(f"Data as of: {date:%Y-%m-%d %H:%M:%S%z}\n")
 

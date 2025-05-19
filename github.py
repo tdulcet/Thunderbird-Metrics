@@ -45,8 +45,9 @@ GITHUB_TOKEN = None
 
 HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"} if GITHUB_TOKEN is not None else None
 
-ORGANIZATIONS = ("thunderbird", "thunderbird-council")
-ORGANIZATION = "thunderbird"
+ORGANIZATIONS = ("thunderbird", "mozilla-comm", "thunderbird-council")
+
+REPOSITORIES = (("mozilla", "releases-comm-central"),)
 
 LIMIT = 100
 
@@ -208,7 +209,7 @@ def get_repositories(org):
 	page = 1
 
 	while True:
-		print(f"\tPage {page} ({len(repos)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(repos):n})", file=sys.stderr)
 
 		r, data = github_api(f"{GITHUB_API_URL}orgs/{org}/repos", {"per_page": LIMIT, "page": page})
 
@@ -220,6 +221,11 @@ def get_repositories(org):
 		page += 1
 
 	return repos
+
+
+def get_repository(org, repo):
+	_, data = github_api(f"{GITHUB_API_URL}repos/{org}/{repo}")
+	return data
 
 
 def get_user(user):
@@ -237,7 +243,7 @@ def get_all_issues(org, repo, start_date=None):
 	page = 1
 
 	while True:
-		print(f"\tPage {page} ({len(issues)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(issues):n})", file=sys.stderr)
 
 		r, data = github_api(
 			f"{GITHUB_API_URL}repos/{org}/{repo}/issues",
@@ -264,7 +270,7 @@ def get_all_discussions(org, repo, start_date=None):
 	page = 1
 
 	while True:
-		print(f"\tPage {page} ({len(discussions)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(discussions):n})", file=sys.stderr)
 
 		r, data = github_api(f"{GITHUB_API_URL}repos/{org}/{repo}/discussions", {"per_page": LIMIT, "page": page})
 
@@ -321,9 +327,14 @@ def main():
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2015, 1, 1, tzinfo=timezone.utc)
-	# start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = datetime(year - 10, 1, 1, tzinfo=timezone.utc)
+
 	dates = []
 	date = start_date
 	while date < end_date:
@@ -353,6 +364,10 @@ def main():
 		for org in ORGANIZATIONS:
 			data = get_repositories(org)
 			repos.extend(data)
+
+		for org, repo in REPOSITORIES:
+			data = get_repository(org, repo)
+			repos.append(data)
 
 		print("Repositories:", [repo["full_name"] for repo in repos], file=sys.stderr)
 
@@ -399,10 +414,10 @@ def main():
 		print("Getting Languages", file=sys.stderr)
 		starttime = time.perf_counter()
 
-		for org, repo in [("mozilla", "releases-comm-central")] + [(repo["owner"]["login"], repo["name"]) for repo in repos]:
-			print(f"\nRepository: {org!r}/{repo!r}", file=sys.stderr)
+		for repo in repos:
+			print(f"\nRepository: {repo['full_name']!r}", file=sys.stderr)
 
-			languages[f"{org}/{repo}"] = get_languages(org, repo)
+			languages[repo["full_name"]] = get_languages(repo["owner"]["login"], repo["name"])
 
 		endtime = time.perf_counter()
 		print(f"Downloaded languages in {output_duration(timedelta(seconds=endtime - starttime))}.", file=sys.stderr)
@@ -421,7 +436,7 @@ def main():
 	else:
 		users = {}
 
-	print(f"## 🐙 GitHub, Thunderbird Organization (github.com/{ORGANIZATION})\n")
+	print("## 🐙 GitHub\n")
 
 	print(f"Data as of: {date:%Y-%m-%d %H:%M:%S%z}\n")
 
@@ -467,6 +482,18 @@ def main():
 			issues_open.append(issue)
 			issues_open_deltas.append(date - created_date)
 
+	issue_counts = Counter(urlparse(issue["repository_url"]).path.split("/")[-2] for issue in issues_open)
+	pr_counts = Counter(urlparse(issue["repository_url"]).path.split("/")[-2] for issue in pr_open)
+
+	output_markdown_table(
+		[
+			(f"{issue_counts[organization]:n}", f"{pr_counts[organization]:n}", organization, repository or "(all)")
+			for item in (((org, None) for org in ORGANIZATIONS), REPOSITORIES)
+			for organization, repository in item
+		],
+		("Issues", "Pull Requests", "Organization", "Repository"),
+	)
+
 	issue_counts = Counter("/".join(urlparse(issue["repository_url"]).path.split("/")[-2:]) for issue in issues_open)
 	issues_count = len(issues_open)
 	triaged_issues = sum(
@@ -475,7 +502,7 @@ def main():
 		if issue["type"] or (issue["labels"] and not any(label["name"] == "unconfirmed" for label in issue["labels"]))
 	)  # issue['assignee']
 
-	print(f"### Total Open Issues: {issues_count:n} / {sum(1 for issue in issues if 'pull_request' not in issue):n}\n")
+	print(f"\n### Total Open Issues: {issues_count:n} / {sum(1 for issue in issues if 'pull_request' not in issue):n}\n")
 
 	rows = [(f"{count:n}", key) for key, count in issue_counts.most_common(10)]
 	rows.append(("…", f"({len(issue_counts):n} repositories total)"))

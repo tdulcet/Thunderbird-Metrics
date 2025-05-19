@@ -134,7 +134,7 @@ def get_topics(slug, aid):
 	page = 0
 
 	while True:
-		print(f"\tPage {page} ({len(topics)})", file=sys.stderr)
+		print(f"\tPage {page} ({len(topics):n})", file=sys.stderr)
 
 		try:
 			r = session.get(f"{DISCOURSE_BASE_URL}c/{slug}/{aid}.json", params={"per_page": LIMIT, "page": page}, timeout=30)
@@ -163,8 +163,14 @@ def main():
 		print(f"Usage: {sys.argv[0]}", file=sys.stderr)
 		sys.exit(1)
 
-	start_date = datetime(2017, 10, 1, tzinfo=timezone.utc)
 	end_date = datetime.now(timezone.utc)
+	year = end_date.year
+	month = end_date.month - 1
+	if month < 1:
+		year -= 1
+		month += 12
+	start_date = max(datetime(year - 10, 1, 1, tzinfo=timezone.utc), datetime(2017, 10, 1, tzinfo=timezone.utc))
+
 	dates = []
 	date = start_date
 	while date < end_date:

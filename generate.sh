@@ -29,16 +29,16 @@ mkdir -p "$date1"/{bugzilla,github,mozilla_connect,addons,support,localization}
 # } >"$date1/email.md"
 # exit
 
-echo -e "Bugzilla/BMO, Crash Stats and Thunderbird Code Coverage\n"
+echo -e "Bugzilla/BMO, Phabricator, Crash Stats and Thunderbird Code Coverage\n"
 
 cat <<EOF >"$date1/bugzilla/email.md"
-Subject: Thunderbird Community Metrics $date2 ($date1): Bugzilla, Crash Stats and Code Coverage
+Subject: Thunderbird Community Metrics $date2 ($date1): Bugzilla, Phabricator, Crash Stats and Code Coverage
 
 Hello Thunderbird Community,
 
-Welcome to the Thunderbird Community Metrics, which are designed to complement Magnus’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 12 sources:
+Welcome to the Thunderbird Community Metrics, which are designed to complement Magnus’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 13 sources:
 
-1. Bugzilla/BMO, Crash Stats and Thunderbird Code Coverage
+1. Bugzilla/BMO, Phabricator, Crash Stats and Thunderbird Code Coverage
 2. GitHub
 3. Thunderbird Stats and Mozilla Connect
 4. Thunderbird Add-ons/ATN
@@ -142,10 +142,10 @@ Feedback is welcome. The scripts used to generate these e-mails are open source:
 -Teal
 EOF
 
-echo -e "\nSupport (Mozilla Support/SUMO, Mozilla Discourse and Topicbox)\n"
+echo -e "\nSupport (Mozilla Support Forum/SUMO, Mozilla Discourse and Topicbox)\n"
 
 cat <<EOF >"$date1/support/email.md"
-Subject: Thunderbird Community Metrics $date2 ($date1): Support (Mozilla Support, Mozilla Discourse and Topicbox)
+Subject: Thunderbird Community Metrics $date2 ($date1): Support (Mozilla Support Forum, Mozilla Discourse and Topicbox)
 
 Hello Thunderbird Community,
 
