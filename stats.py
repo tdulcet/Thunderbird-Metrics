@@ -365,12 +365,12 @@ def main():
 
 	# https://whattrainisitnow.com/api/firefox/chemspills/
 	# https://www.mozilla.org/security/known-vulnerabilities/thunderbird/
-	adate = datetime(2024, 10, 10, tzinfo=timezone.utc)
+	adate = datetime(2025, 5, 20, tzinfo=timezone.utc)
 
 	print(f"""
 ### ☢️ Last Chemspill (critical 0-day security vulnerability)
 
-{adate:%Y-%m-%d} ({(date - adate).days:n} days ago): Thunderbird 131.0.1, 128.3.1 and 115.16.0.
+{adate:%Y-%m-%d} ({(date - adate).days:n} days ago): Thunderbird 138.0.2 and 128.10.2.
 
 Also see: https://wiki.mozilla.org/Release_Management/Chemspill""")
 

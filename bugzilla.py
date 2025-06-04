@@ -501,7 +501,12 @@ def main():
 	open_count = len(aopen)
 	counts = Counter(bug["product"] for bug in aopen)
 
+	missing = len(bugs) - len(items)
+
 	print(f"### Total Open Bugs: {open_count:n} / {len(items):n}\n")
+
+	if missing:
+		print(f"(Missing bugs: {missing:n})\n")
 
 	output_markdown_table(
 		[(f"{counts[product]:n}", product, component or "(all)") for products, component in PRODUCTS for product in products],

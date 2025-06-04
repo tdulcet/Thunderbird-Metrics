@@ -261,12 +261,17 @@ def main():
 			f"\n**Total Unreviewed Strings**: {data['unreviewedStrings']:n} / {data['totalStrings']:n} ({data['unreviewedStrings'] / data['totalStrings']:.4%})\n"
 		)
 
-		print("#### Top Missing Firefox Locales by Population (number of native speakers)\n")
+		print("#### Top Missing Locales by Population (number of native speakers)\n")
 
 		rows = []
 		for i, item in enumerate(
 			sorted(
-				(alocale for alocale in locales if alocale["code"] in ff_locales if alocale["code"] not in alocales),
+				(
+					alocale
+					for alocale in locales
+					# Japanese (ja) is supported, but does not use Pontoon
+					if alocale["code"] in ff_locales and alocale["code"] not in alocales and alocale["code"] != "ja"
+				),
 				key=operator.itemgetter("population"),
 				reverse=True,
 			),
@@ -280,7 +285,9 @@ def main():
 
 		diff = ff_locales - alocales
 
-		print(f"\n**Total Missing Firefox localizations**: {len(diff):n}\n")
+		print(
+			f"\n**Total Missing localizations**: {len(diff):n}\n\n(Missing meaning it is supported by Firefox, but not yet by Thunderbird.)\n"
+		)
 
 
 if __name__ == "__main__":

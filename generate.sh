@@ -45,7 +45,7 @@ Welcome to the Thunderbird Community Metrics, which are designed to complement M
 5. Support (Mozilla Support/SUMO, Mozilla Discourse and Topicbox)
 6. Localization (Pontoon and Weblate)
 
-This is e-mail 1 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 1 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
@@ -75,7 +75,7 @@ Subject: Thunderbird Community Metrics $date2 ($date1): GitHub
 
 Hello Thunderbird Community,
 
-This is e-mail 2 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 2 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
@@ -99,7 +99,7 @@ Subject: Thunderbird Community Metrics $date2 ($date1): Stats and Mozilla Connec
 
 Hello Thunderbird Community,
 
-This is e-mail 3 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 3 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
@@ -125,7 +125,7 @@ Subject: Thunderbird Community Metrics $date2 ($date1): Add-ons (extensions and 
 
 Hello Thunderbird Community,
 
-This is e-mail 4 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 4 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
@@ -149,7 +149,7 @@ Subject: Thunderbird Community Metrics $date2 ($date1): Support (Mozilla Support
 
 Hello Thunderbird Community,
 
-This is e-mail 5 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 5 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
@@ -179,7 +179,7 @@ Subject: Thunderbird Community Metrics $date2 ($date1): Localization (Pontoon an
 
 Hello Thunderbird Community,
 
-This is e-mail 6 of 6 of the Thunderbird Community Metrics. It includes graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
+This is e-mail 6 of 6 of the Thunderbird Community Metrics. It includes inline graphs, so viewing the HTML version is recommended. Tables are included as a fallback and hidden by default when viewing the HTML version. Note that the SVG graphs may not display correctly in other e-mail clients (e.g. Gmail, Topicbox website). PNG versions of the graphs are also attached, as well as the raw CSV data.
 
 🙋 We are looking for a volunteer Mozilla or MZLA employee to run these scripts and send the e-mails each month. If you might be interested, please send us a message.
 
