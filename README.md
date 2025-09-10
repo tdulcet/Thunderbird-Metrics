@@ -1,6 +1,8 @@
 # Thunderbird Community Metrics
 Mozilla Thunderbird Community Metrics
 
+**This is the original repository. It has moved to https://github.com/thunderbird/Thunderbird-Metrics, where maintenance will continue.**
+
 Copyright © 2025 Teal Dulcet
 
 The Thunderbird Community Metrics are designed to complement @mkmelin’s existing “Thunderbird Metrics” e-mail, while providing data from additional sources. There are a total of six e-mails, covering 13 sources:
